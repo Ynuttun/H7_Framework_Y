@@ -4,8 +4,6 @@
 #include "dmmotor.h"
 #include <cmath>
 
-uint6_t yyy_test;
-
 namespace
 {
 constexpr uint64_t GIMBAL_INS_MAX_AGE_US = 10000U;
