@@ -85,7 +85,7 @@ extern "C" void TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
     {
         Task3600s_Callback();
     }
-    else if (htim->Instance == TIM6TIM1msTask)
+    else if (htim->Instance == TIM6)
     {
         Task1s_Callback();
     }

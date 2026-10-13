@@ -256,7 +256,7 @@ static void PublishFeedback(void)
         GimbalFeedback feedback{};
         if (ctx.ins_valid)
         {
-            feedback.yaw_rad = ctx.ins.yaw_rkad;
+            feedback.yaw_rad = ctx.ins.yaw_rad;
             feedback.pitch_rad = ctx.ins.pitch_rad;
             feedback.yaw_speed_rad_s = Gyro(ctx.config.yaw_gyro_axis, ctx.config.yaw_gyro_sign);
             feedback.pitch_speed_rad_s = Gyro(ctx.config.pitch_gyro_axis, ctx.config.pitch_gyro_sign);
