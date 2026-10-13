@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "skipped",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/nuttun/项目/RM/RM_Opensource_Code/H7_Framework_Y/.archify/architecture-gimbal-control-20261013-094344/candidate.json",
+    "sha256": "ac4061593f8fdf042c6ac1a9a60d1689d16085c111976f36a4a955ab29383a00",
+    "bytes": 18276
+  },
+  "artifact": {
+    "path": "/home/nuttun/项目/RM/RM_Opensource_Code/H7_Framework_Y/.archify/architecture-gimbal-control-20261013-094344/gimbal-control.html",
+    "sha256": "f50c456df92050c7b6717e16527717317b5800c226fb2c3481eed71f268af372",
+    "bytes": 794418
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "skipped"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/chrome-unavailable",
+      "severity": "warning",
+      "message": "Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path.",
+      "subject": {
+        "artifact": "/home/nuttun/项目/RM/RM_Opensource_Code/H7_Framework_Y/.archify/architecture-gimbal-control-20261013-094344/gimbal-control.html"
+      },
+      "evidence": {
+        "executable": null
+      },
+      "supportedFixes": [
+        "set ARCHIFY_CHROME to a Chrome or Chromium executable and rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/nuttun/项目/RM/RM_Opensource_Code/H7_Framework_Y/.archify/architecture-gimbal-control-20261013-094344/gimbal-control.finalize.json",
+    "summaryReceipt": "/home/nuttun/项目/RM/RM_Opensource_Code/H7_Framework_Y/.archify/architecture-gimbal-control-20261013-094344/gimbal-control.finalize-summary.json",
+    "browserCheckReceipt": "/home/nuttun/项目/RM/RM_Opensource_Code/H7_Framework_Y/.archify/architecture-gimbal-control-20261013-094344/gimbal-control.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-13T01:43:49.013Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 366
+}
