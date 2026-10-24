@@ -48,6 +48,21 @@ typedef struct
 
 #pragma pack()
 
+/** UI 所需的 17 mm 裁判显示快照；不代表控制许可。时间为 HAL tick ms。 */
+typedef struct
+{
+    uint32_t status_ms;
+    uint32_t heat_ms;
+    uint32_t allowance_ms;
+    uint16_t buffer_energy_j;
+    uint16_t barrel_heat;
+    uint16_t barrel_heat_limit;
+    uint16_t projectile_allowance;
+    uint8_t status_received;
+    uint8_t heat_received;
+    uint8_t allowance_received;
+} referee_ui_snapshot_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -73,6 +88,10 @@ uint8_t RefereeTrySend(uint8_t *send, uint16_t tx_len);
 
 /** @brief 解析本次 DMA chunk，不注册 UART，与接收回调共用跨调用半帧缓冲。 */
 void RefereeReceiveData(uint8_t *data, uint16_t length);
+/** 原子复制原始显示快照；不续期、不代替每类数据的 500 ms 时效检查。
+ * 未初始化或空指针返回 0 且不修改输出；received 区分未收到与有效零值。
+ */
+uint8_t RefereeReadUISnapshot(referee_ui_snapshot_t *snapshot);
 uint8_t RefereeIsEnabled(void);   ///< 已完成 UART 注册；裁判系统没有协议使能态。
 uint8_t RefereeIsOnline(void);    ///< 最近 500 ms 内解析到过 CRC 合法帧。
 uint8_t RefereeIsDataValid(void); ///< 当前等价于 Online。

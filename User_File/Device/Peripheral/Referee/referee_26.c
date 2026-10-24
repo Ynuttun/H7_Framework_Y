@@ -26,6 +26,7 @@ static uint16_t referee_rx_length;
 static uint16_t ui_robot_id;
 static uint32_t ui_robot_id_ms;
 static uint8_t ui_robot_id_received;
+static referee_ui_snapshot_t ui_snapshot;
 
 /* 已校验 CRC 的已知命令必须匹配该命令的固定载荷长度；未知命令只计链路在线。 */
 static uint8_t JudgeStoreFrame(const uint8_t *frame, uint16_t payload_length)
@@ -67,6 +68,26 @@ static uint8_t JudgeStoreFrame(const uint8_t *frame, uint16_t payload_length)
         ui_robot_id = referee_info.GameRobotState.robot_id;
         ui_robot_id_ms = HAL_GetTick();
         ui_robot_id_received = TRUE;
+    }
+    // 仅通过长度与 CRC 校验的对应帧更新该类数据及其时间戳。
+    if (command_id == ID_robot_status)
+    {
+        ui_snapshot.barrel_heat_limit = referee_info.GameRobotState.shooter_barrel_heat_limit;
+        ui_snapshot.status_ms = HAL_GetTick();
+        ui_snapshot.status_received = TRUE;
+    }
+    else if (command_id == ID_power_heat_data)
+    {
+        ui_snapshot.buffer_energy_j = referee_info.PowerHeatData.buffer_energy;
+        ui_snapshot.barrel_heat = referee_info.PowerHeatData.shooter_17mm_barrel_heat;
+        ui_snapshot.heat_ms = HAL_GetTick();
+        ui_snapshot.heat_received = TRUE;
+    }
+    else if (command_id == ID_projectile_allowance)
+    {
+        ui_snapshot.projectile_allowance = referee_info.ProjectileAllowance.projectile_allowance_17mm;
+        ui_snapshot.allowance_ms = HAL_GetTick();
+        ui_snapshot.allowance_received = TRUE;
     }
     memcpy(&referee_info.FrameHeader, frame, LEN_HEADER);
     referee_info.CmdID = command_id;
@@ -148,6 +169,7 @@ referee_info_t *RefereeInit(UART_HandleTypeDef *referee_usart_handle)
     memset(&referee_info, 0, sizeof(referee_info));
     referee_rx_length = 0U;
     ui_robot_id_received = FALSE;
+    memset(&ui_snapshot, 0, sizeof(ui_snapshot));
     referee_uart = referee_usart_handle;
     UART_Init(referee_usart_handle, RefereeRxCallback);
 
@@ -193,6 +215,18 @@ uint8_t RefereeReadUIRobotId(uint16_t *robot_id)
 void RefereeReceiveData(uint8_t *data, uint16_t length)
 {
     JudgeReadData(data, length);
+}
+
+uint8_t RefereeReadUISnapshot(referee_ui_snapshot_t *snapshot)
+{
+    if (snapshot == NULL || referee_uart == NULL)
+        return FALSE;
+    const uint32_t mask = __get_PRIMASK();
+    __disable_irq();
+    *snapshot = ui_snapshot;
+    __DMB();
+    __set_PRIMASK(mask);
+    return TRUE;
 }
 
 uint8_t RefereeIsEnabled(void) { return referee_uart != NULL; }

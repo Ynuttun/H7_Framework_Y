@@ -22,5 +22,5 @@ for source in sources:
     objects.append(str(obj))
 binary = build / "client_ui_test"
 subprocess.run(["g++", *flags, "-no-pie", *objects, "-o", str(binary)], check=True)
-for case in ("protocol", "identity", "capture", "layout", "schedule", "expiry", "recovery"):
+for case in ("protocol", "identity", "capture", "layout", "schedule", "expiry", "recovery", "referee", "fairness", "loss", "values", "rollover", "boundaries"):
     subprocess.run([str(binary), case], check=True)

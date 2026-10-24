@@ -148,6 +148,14 @@ enum class Enum_Client_UI_AutoAim : uint8_t
     Active,
 };
 
+enum class Enum_Client_UI_FireMode : uint8_t
+{
+    Unknown,
+    Single,
+    Triple,
+    Burst,
+};
+
 /** ControlTask 唯一发布，StatusTask 消费；原始反馈时间戳不会随采集刷新。
  * 文字为至多 29 字节的 ASCII 加结尾 NUL；报警无需显示时置空。
  * yaw/autoaim/文字由具体机器人适配器提供，整体快照有效期 200 ms。
@@ -168,6 +176,23 @@ struct Struct_Client_UI_State
     Enum_Client_UI_Motion friction = Enum_Client_UI_Motion::Unknown;
     Enum_Client_UI_Motion loader = Enum_Client_UI_Motion::Unknown;
     Enum_Client_UI_AutoAim autoaim = Enum_Client_UI_AutoAim::Unknown;
+    // 功率来自实测源；默认适配器不提供功率或持久发射模式。
+    uint64_t power_timestamp_us = 0U;
+    uint64_t fire_mode_timestamp_us = 0U;
+    float power_w = 0.0f;
+    bool power_valid = false;
+    Enum_Client_UI_FireMode fire_mode = Enum_Client_UI_FireMode::Unknown;
+    // 裁判源时间使用 HAL tick ms，消费端按无符号差处理回绕。
+    uint32_t referee_status_ms = 0U;
+    uint32_t referee_heat_ms = 0U;
+    uint32_t referee_allowance_ms = 0U;
+    uint16_t buffer_energy_j = 0U;
+    uint16_t barrel_heat = 0U;
+    uint16_t barrel_heat_limit = 0U;
+    uint16_t projectile_allowance = 0U;
+    bool referee_status_valid = false;
+    bool referee_heat_valid = false;
+    bool referee_allowance_valid = false;
     char mode_text[30] = "UNKNOWN";
     char alert_text[3][30]{};
     bool alert_warning[3]{};

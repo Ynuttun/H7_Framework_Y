@@ -339,39 +339,39 @@ static void Layout()
 static void Schedule()
 {
     Start();
-    for (unsigned ms = 0; ms < 100U; ms += 10U)
+    for (unsigned ms = 0; ms < 40U; ms += 10U)
         Tick(ms);
     assert(packets.empty());
     tx_status = HAL_BUSY;
-    Tick(100U);
+    Tick(40U);
     const auto failed = packets.back().bytes;
     tx_status = HAL_OK;
-    Tick(110U);
+    Tick(50U);
     assert(packets.back().bytes == failed);
-    Tick(209U);
+    Tick(89U);
     assert(packets.size() == 2U);
-    Tick(210U);
+    Tick(90U);
     assert(Dynamic(packets.back()) && FigureAt(packets.back(), 1U).operate_type == operate_type_ADD);
     // On a failed dynamic update the same ADD/Change state and sequence must be retried.
-    Tick(310U);
+    Tick(130U);
     tx_status = HAL_ERROR;
-    Tick(410U);
+    Tick(170U);
     const auto dynamic_failed = packets.back().bytes;
     tx_status = HAL_OK;
-    Tick(420U);
+    Tick(180U);
     assert(packets.back().bytes == dynamic_failed && FigureAt(packets.back(), 1U).operate_type == operate_type_Change);
-    for (unsigned ms = 430U; ms <= 9000U; ms += 10U)
+    for (unsigned ms = 190U; ms <= 9000U; ms += 10U)
         Tick(ms);
     uint32_t last_ms = 0U;
     bool sent = false, readded = false;
     unsigned clears = 0U;
     std::array<bool, 37> static_seen{};
-    std::array<bool, 6> labels_seen{};
+    std::array<bool, 7> labels_seen{};
     for (const auto& packet : packets)
     {
         if (packet.status != HAL_OK)
             continue;
-        assert(!sent || packet.ms - last_ms >= 100U);
+        assert(!sent || packet.ms - last_ms >= 40U);
         sent = true;
         last_ms = packet.ms;
         const auto content = U16(packet.bytes, 7U);
@@ -392,7 +392,7 @@ static void Schedule()
         else if (content == 0x0110U)
         {
             const uint8_t id = packet.bytes[15];
-            if (id >= 150U && id < 156U)
+            if (id >= 150U && id < 157U)
                 labels_seen[id - 150U] = true;
         }
     }
@@ -471,6 +471,391 @@ static void Recovery()
     assert(packets.back().bytes[3] == seq);
 }
 
+
+template <typename T>
+static void ReceivePayload(uint16_t command, const T& payload)
+{
+    auto frame = Frame(command, sizeof(payload), 0U);
+    std::memcpy(frame.data() + 7U, &payload, sizeof(payload));
+    Append_CRC16_Check_Sum(frame.data(), frame.size());
+    RefereeReceiveData(frame.data(), frame.size());
+}
+
+static std::string Text(const Packet& p)
+{
+    return std::string(reinterpret_cast<const char*>(p.bytes.data() + 28U), FigureAt(p, 0U).details_b);
+}
+
+static void RefereeSnapshot()
+{
+    referee_ui_snapshot_t snapshot{};
+    snapshot.barrel_heat = 99U;
+    assert(!RefereeReadUISnapshot(&snapshot) && snapshot.barrel_heat == 99U);
+    Start();
+    assert(!RefereeReadUISnapshot(nullptr));
+    assert(RefereeReadUISnapshot(&snapshot) && !snapshot.heat_received);
+    robot_status_t status{};
+    status.robot_id = 3U;
+    status.shooter_barrel_heat_limit = 240U;
+    now_us = 10000U;
+    ReceivePayload(0x0201U, status);
+    power_heat_data_t heat{};
+    heat.buffer_energy = 0U;
+    heat.shooter_17mm_barrel_heat = 120U;
+    now_us = 20000U;
+    ReceivePayload(0x0202U, heat);
+    projectile_allowance_t ammo{};
+    ammo.projectile_allowance_17mm = 45U;
+    now_us = 30000U;
+    ReceivePayload(0x0208U, ammo);
+    test_primask = 1U;
+    assert(RefereeReadUISnapshot(&snapshot) && test_primask == 1U);
+    test_primask = 0U;
+    assert(snapshot.status_received && snapshot.heat_received && snapshot.allowance_received);
+    assert(snapshot.status_ms == 10U && snapshot.heat_ms == 20U && snapshot.allowance_ms == 30U);
+    assert(snapshot.barrel_heat_limit == 240U && snapshot.barrel_heat == 120U && snapshot.projectile_allowance == 45U);
+    const auto saved = snapshot;
+    now_us = 40000U;
+    for (uint16_t command : {0x0201U, 0x0202U, 0x0208U})
+    {
+        const unsigned size = command == 0x0201U ? 13U : command == 0x0202U ? 14U : 8U;
+        auto bad = Frame(command, size, 3U);
+        bad.back() ^= 1U;
+        RefereeReceiveData(bad.data(), bad.size());
+        auto short_frame = Frame(command, size - 1U, 3U);
+        RefereeReceiveData(short_frame.data(), short_frame.size());
+    }
+    auto unrelated = Frame(0x7777U, 1U, 3U);
+    RefereeReceiveData(unrelated.data(), unrelated.size());
+    assert(RefereeReadUISnapshot(&snapshot));
+    assert(std::memcmp(&snapshot, &saved, sizeof(snapshot)) == 0);
+    auto split = Frame(0x0202U, 14U, 0U);
+    RefereeReceiveData(split.data(), 10U);
+    assert(RefereeReadUISnapshot(&snapshot) && snapshot.heat_ms == 20U);
+    RefereeReceiveData(split.data() + 10U, split.size() - 10U);
+    assert(RefereeReadUISnapshot(&snapshot) && snapshot.heat_ms == 40U && snapshot.barrel_heat == 0U);
+    ClientUI_Capture();
+    const auto view = MessageCenter::Client_UI_State_Topic.ReadWithMeta().data;
+    assert(view.referee_status_ms == 10U && view.referee_heat_ms == 40U && view.referee_allowance_ms == 30U);
+    assert(view.referee_heat_valid && view.buffer_energy_j == 0U);
+    assert(!view.power_valid && view.fire_mode == Enum_Client_UI_FireMode::Unknown);
+    assert(RefereeInit(&uart));
+    assert(RefereeReadUISnapshot(&snapshot) && !snapshot.status_received && !snapshot.heat_received && !snapshot.allowance_received);
+}
+
+static void PublishExtended()
+{
+    auto state = LiveState();
+    state.power_valid = true;
+    state.power_w = 100.5f;
+    state.power_timestamp_us = state.fire_mode_timestamp_us = now_us;
+    state.fire_mode = Enum_Client_UI_FireMode::Triple;
+    state.referee_status_valid = state.referee_heat_valid = state.referee_allowance_valid = true;
+    state.referee_status_ms = state.referee_heat_ms = state.referee_allowance_ms = HAL_GetTick();
+    state.barrel_heat = HAL_GetTick() / 10U;
+    state.barrel_heat_limit = 240U;
+    state.projectile_allowance = 45U;
+    state.buffer_energy_j = HAL_GetTick() / 10U;
+    MessageCenter::Client_UI_State_Topic.Publish(state);
+}
+
+static void Fairness()
+{
+    Start();
+    for (uint32_t ms = 0U; ms <= 12000U; ms += 10U)
+    {
+        now_us = uint64_t(ms) * 1000U;
+        PublishExtended();
+        const auto before = packets.size();
+        ClientUI_Update();
+        assert(packets.size() - before <= 1U);
+    }
+    uint32_t dynamic_ms = 0U, add_ms = 0U, buffer_ms = 0U;
+    unsigned dynamics = 0U, adds = 0U;
+    std::array<bool, 37> figures{};
+    std::array<bool, 7> labels{};
+    for (size_t n = 0U; n < packets.size(); ++n)
+    {
+        const auto& p = packets[n];
+        assert(p.bytes.size() <= 120U);
+        if (n) assert(p.ms - packets[n - 1U].ms >= 40U);
+        size_t bytes = 0U;
+        for (size_t j = n; j < packets.size() && packets[j].ms - p.ms < 1000U; ++j)
+            bytes += packets[j].bytes.size();
+        assert(bytes <= 3000U);
+        if (Dynamic(p))
+        {
+            if (dynamics++) assert(p.ms - dynamic_ms <= 80U);
+            dynamic_ms = p.ms;
+            if (FigureAt(p, 1U).operate_type == operate_type_ADD)
+            {
+                if (adds++) assert(p.ms - add_ms <= 1080U);
+                add_ms = p.ms;
+            }
+        }
+        else if (U16(p.bytes, 7U) == 0x0110U)
+        {
+            const auto f = FigureAt(p, 0U);
+            const auto id = f.figure_name[2];
+            if (id == 174U)
+            {
+                if (buffer_ms && f.operate_type != operate_type_ADD) assert(p.ms - buffer_ms >= 200U);
+                buffer_ms = p.ms;
+            }
+            if (p.ms < 5000U && id >= 150U && id < 157U) labels[id - 150U] = true;
+        }
+        else if (U16(p.bytes, 7U) != 0x0100U && p.ms < 5000U)
+        {
+            const unsigned count = U16(p.bytes, 7U) == 0x0104U ? 7U : 2U;
+            for (unsigned i = 0U; i < count; ++i) figures[FigureAt(p, i).figure_name[2]] = true;
+        }
+    }
+    for (bool seen : figures) assert(seen);
+    for (bool seen : labels) assert(seen);
+    assert(dynamics >= 149U && adds >= 11U);
+}
+
+static void Loss()
+{
+    // Client model: ADD creates only missing figures; Change updates only existing ones.
+    for (bool existing : {false, true})
+        for (unsigned dropped = 0U; dropped < 4U; ++dropped)
+        {
+            Start();
+            unsigned counts[2]{};
+            bool present[2] = {existing, existing};
+            std::string displayed[2] = {"OLD", "OLD"};
+            for (unsigned step = 0U; step < 400U && (counts[0] < 4U || counts[1] < 4U); ++step)
+            {
+                now_us += 10000U;
+                PublishExtended();
+                const size_t before = packets.size();
+                ClientUI_Update();
+                if (before == packets.size()) continue;
+                const auto& p = packets.back();
+                if (U16(p.bytes, 7U) != 0x0110U) continue;
+                const auto f = FigureAt(p, 0U);
+                if (f.figure_name[2] != 173U && f.figure_name[2] != 176U) continue;
+                const unsigned i = f.figure_name[2] == 173U ? 0U : 1U;
+                const unsigned count = counts[i]++;
+                assert(count < 4U);
+                assert(f.operate_type == (count % 2U ? operate_type_Change : operate_type_ADD));
+                if (count == dropped) continue;
+                if ((f.operate_type == operate_type_ADD && !present[i]) ||
+                    (f.operate_type == operate_type_Change && present[i]))
+                {
+                    displayed[i] = Text(p);
+                    present[i] = true;
+                }
+            }
+            assert(counts[0] == 4U && counts[1] == 4U);
+            assert(present[0] && displayed[0] == "SPIN");
+            assert(present[1] && displayed[1] == "FIRE TRIPLE");
+            counts[0] = counts[1] = 0U;
+            for (unsigned step = 0U; step < 400U && (counts[0] < 4U || counts[1] < 4U); ++step)
+            {
+                now_us += 10000U;
+                auto view = LiveState();
+                view.mode_text[0] = '\0';
+                MessageCenter::Client_UI_State_Topic.Publish(view);
+                const size_t before = packets.size();
+                ClientUI_Update();
+                if (before == packets.size()) continue;
+                const auto& p = packets.back();
+                if (U16(p.bytes, 7U) != 0x0110U) continue;
+                const auto f = FigureAt(p, 0U);
+                if (f.figure_name[2] != 173U && f.figure_name[2] != 176U) continue;
+                const unsigned i = f.figure_name[2] == 173U ? 0U : 1U;
+                const unsigned count = counts[i]++;
+                assert(count < 4U && f.operate_type == operate_type_Del);
+                if (count != dropped) present[i] = false;
+            }
+            assert(counts[0] == 4U && counts[1] == 4U && !present[0] && !present[1]);
+        }
+    // Busy does not consume a repeat; changing targets drops pending old repeats.
+    Start();
+    bool changed = false, retried = false;
+    unsigned new_count = 0U;
+    for (unsigned step = 0U; step < 400U && new_count < 4U; ++step)
+    {
+        now_us += 10000U;
+        auto view = LiveState();
+        std::strcpy(view.mode_text, changed ? "FREE" : "FOLLOW");
+        MessageCenter::Client_UI_State_Topic.Publish(view);
+        const auto before = packets.size();
+        if (changed && !retried) tx_status = HAL_BUSY;
+        ClientUI_Update();
+        if (before == packets.size()) continue;
+        const auto p = packets.back();
+        if (p.status == HAL_BUSY)
+        {
+            tx_status = HAL_OK;
+            ClientUI_Update();
+            assert(p.bytes == packets.back().bytes);
+            retried = true;
+        }
+        if (U16(p.bytes, 7U) == 0x0110U && p.bytes[15] == 173U)
+        {
+            if (!changed) changed = true;
+            else
+            {
+                assert(Text(p) == "FREE");
+                assert(FigureAt(p, 0U).operate_type == (new_count % 2U ? operate_type_Change : operate_type_ADD));
+                ++new_count;
+            }
+        }
+    }
+    assert(retried && new_count == 4U);
+}
+
+static void Values()
+{
+    Start();
+    // Exact power boundary, invalid values, and packed zero/fractional float representation.
+    interaction_figure_t figures[7]{};
+    auto state = LiveState();
+    state.power_valid = true;
+    for (float value : {0.0f, 100.5f, 3276.75f, -1.0f, 3276.76f,
+                        std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+    {
+        state.power_w = value;
+        ClientUILayout::BuildDynamic(state, figures);
+        const bool valid = std::isfinite(value) && value >= 0.0f && value <= 3276.75f;
+        assert((figures[0].operate_type != operate_type_Del) == valid);
+        if (valid)
+        {
+            const uint32_t encoded = figures[0].details_c | (figures[0].details_d << 10U) | (figures[0].details_e << 21U);
+            assert(encoded == uint32_t(std::lround(value * 1000.0f)));
+        }
+    }
+    // Staggered frame ages: independently remove limit, then heat/buffer, then ammo.
+    std::string last_buffer, last_combat, last_fire;
+    unsigned fire_deletes = 0U;
+    bool power_deleted = false, power_restored = false;
+    for (uint32_t ms = 0U; ms <= 3600U; ms += 10U)
+    {
+        now_us = uint64_t(ms) * 1000U;
+        auto view = LiveState();
+        view.power_valid = true;
+        view.power_w = 0.0f;
+        view.power_timestamp_us = ms < 2000U ? now_us : 1990000U;
+        if (ms >= 3000U) view.power_timestamp_us = now_us;
+        view.fire_mode = Enum_Client_UI_FireMode::Single;
+        view.fire_mode_timestamp_us = ms < 1600U ? now_us : 1590000U;
+        view.referee_status_valid = view.referee_heat_valid = view.referee_allowance_valid = true;
+        view.referee_status_ms = ms < 1000U ? ms : 990U;
+        view.referee_heat_ms = ms < 1600U ? ms : 1590U;
+        view.referee_allowance_ms = ms < 2200U ? ms : 2190U;
+        view.barrel_heat_limit = 240U;
+        view.projectile_allowance = 45U;
+        MessageCenter::Client_UI_State_Topic.Publish(view);
+        const auto before = packets.size();
+        ClientUI_Update();
+        if (before != packets.size())
+        {
+            const auto& p = packets.back();
+            if (Dynamic(p))
+            {
+                if (ms < 2090U) assert(FigureAt(p, 0U).operate_type != operate_type_Del);
+                if (ms >= 2090U && ms < 3000U)
+                {
+                    assert(FigureAt(p, 0U).operate_type == operate_type_Del);
+                    power_deleted = true;
+                }
+                if (ms >= 3000U && !power_restored)
+                {
+                    assert(FigureAt(p, 0U).operate_type == operate_type_ADD);
+                    power_restored = true;
+                }
+            }
+            if (U16(p.bytes, 7U) == 0x0110U)
+            {
+                const uint8_t id = p.bytes[15];
+                if (id == 174U) last_buffer = Text(p);
+                if (id == 175U) last_combat = Text(p);
+                if (id == 176U)
+                {
+                    last_fire = Text(p);
+                    if (FigureAt(p, 0U).operate_type == operate_type_Del) ++fire_deletes;
+                }
+            }
+        }
+        if (ms == 1400U) assert(last_buffer == "BUFFER 0 J" && last_combat == "HEAT 0/240 AMMO 45");
+        if (ms == 2000U) assert(last_combat == "HEAT 0 AMMO 45");
+        if (ms == 2600U) assert(last_buffer.empty() && last_combat == "AMMO 45");
+    }
+    assert(last_combat.empty() && last_fire.empty() && fire_deletes == 4U);
+    assert(power_deleted && power_restored);
+}
+
+static void Boundaries()
+{
+    for (uint64_t age : {99999U, 100000U})
+    {
+        now_us = 0U;
+        Start();
+        Tick(40U);
+        now_us = age;
+        auto view = LiveState();
+        view.power_valid = true;
+        view.power_w = 0.0f;
+        view.power_timestamp_us = 0U;
+        MessageCenter::Client_UI_State_Topic.Publish(view);
+        ClientUI_Update();
+        assert(Dynamic(packets.back()));
+        assert((FigureAt(packets.back(), 0U).operate_type == operate_type_Del) == (age == 100000U));
+    }
+    for (unsigned age_extra : {0U, 1U})
+    {
+        now_us = 1000000U;
+        Start();
+        bool buffer_seen = false, combat_seen = false, fire_seen = false;
+        for (unsigned step = 0U; step < 300U; ++step)
+        {
+            now_us += 10000U;
+            auto view = LiveState();
+            view.referee_heat_valid = view.referee_status_valid = view.referee_allowance_valid = true;
+            view.referee_heat_ms = view.referee_status_ms = view.referee_allowance_ms = HAL_GetTick() - 499U - age_extra;
+            view.barrel_heat_limit = view.barrel_heat = view.projectile_allowance = 65535U;
+            view.fire_mode = Enum_Client_UI_FireMode::Burst;
+            view.fire_mode_timestamp_us = now_us - 200000U - age_extra;
+            MessageCenter::Client_UI_State_Topic.Publish(view);
+            const size_t before = packets.size();
+            ClientUI_Update();
+            if (before == packets.size()) continue;
+            const auto& p = packets.back();
+            if (U16(p.bytes, 7U) != 0x0110U) continue;
+            if (p.bytes[15] == 174U) buffer_seen = Text(p) == "BUFFER 0 J";
+            if (p.bytes[15] == 175U) combat_seen = Text(p) == "HEAT 65535/65535 AMMO 65535";
+            if (p.bytes[15] == 176U) fire_seen = Text(p) == "FIRE BURST";
+        }
+        assert(buffer_seen == (age_extra == 0U));
+        assert(combat_seen == (age_extra == 0U));
+        assert(fire_seen == (age_extra == 0U));
+    }
+}
+
+static void Rollover()
+{
+    now_us = (uint64_t(UINT32_MAX) - 100U) * 1000U;
+    Start();
+    for (unsigned step = 0U; step < 300U; ++step)
+    {
+        now_us += 10000U;
+        PublishExtended();
+        ClientUI_Update();
+    }
+    for (size_t i = 1U; i < packets.size(); ++i)
+        assert(uint32_t(packets[i].ms - packets[i - 1U].ms) == 40U);
+    assert(packets.size() >= 74U);
+    now_us += 10000000U;
+    PublishExtended();
+    ClientUI_Update();
+    const auto before = packets.size();
+    for (unsigned i = 0U; i < 10U; ++i) ClientUI_Update();
+    assert(packets.size() == before); // No catch-up burst.
+}
+
 int main(int argc, char** argv)
 {
     assert(argc == 2);
@@ -489,6 +874,12 @@ int main(int argc, char** argv)
         Expiry();
     else if (name == "recovery")
         Recovery();
+    else if (name == "referee") RefereeSnapshot();
+    else if (name == "fairness") Fairness();
+    else if (name == "loss") Loss();
+    else if (name == "values") Values();
+    else if (name == "rollover") Rollover();
+    else if (name == "boundaries") Boundaries();
     else
         assert(false);
     std::printf("PASS %s\n", argv[1]);

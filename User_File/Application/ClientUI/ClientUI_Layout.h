@@ -12,7 +12,7 @@ namespace ClientUILayout
 constexpr float kRadToDeg = 57.2957795131f;
 constexpr float kRadSToRpm = 9.54929658551f;
 constexpr uint8_t kStaticGroups = 6U; // 5 包七图元 + 1 包双图元
-constexpr uint8_t kTextCount = 6U;
+constexpr uint8_t kTextCount = 7U;
 
 constexpr interaction_figure_t Figure(uint8_t id, uint32_t type, uint32_t color, uint32_t width,
                                       uint32_t x, uint32_t y, uint32_t c = 0U, uint32_t d = 0U, uint32_t e = 0U)
@@ -98,9 +98,16 @@ constexpr interaction_figure_t kStaticFigures[] = {
 
 inline void BuildDynamic(const Struct_Client_UI_State& view, interaction_figure_t (&graphs)[7])
 {
-    // 示例未接入超级电容：保留仪表位置，删除能量填充，静态文字明确标注 N/A。
-    graphs[0] = Arc(100U, color_White, 20U, 960U, 540U, 370U, 270U, 310U);
-    graphs[0].operate_type = operate_type_Del;
+    // 复用原电容填充图元；只接受实测功率，浮点协议编码为 W × 1000。
+    const bool power_valid = view.power_valid && std::isfinite(view.power_w) &&
+                             view.power_w >= 0.0f && view.power_w <= 3276.75f;
+    const uint32_t power = power_valid ? static_cast<uint32_t>(std::lround(view.power_w * 1000.0f)) : 0U;
+    graphs[0] = Number(100U, 400U, 630U, 22U, power);
+    graphs[0].figure_type = figure_type_Float;
+    graphs[0].details_b = 1U;
+    graphs[0].width = 2U;
+    if (!power_valid)
+        graphs[0].operate_type = operate_type_Del;
 
     const bool pitch_valid = view.pitch_valid && std::isfinite(view.pitch_rad);
     const float pitch = pitch_valid ? std::fmax(-40.0f, std::fmin(40.0f, view.pitch_rad * kRadToDeg)) : 0.0f;
