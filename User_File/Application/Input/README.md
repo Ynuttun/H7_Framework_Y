@@ -3,6 +3,7 @@
 Input 将设备解析结果转换为 SI 命令，保存固定来源状态，再由 SourceArbitration 选择本周期目标。
 RobotCmd 根据仲裁结果发布命令；Input 不直接控制电机，不另建消息总线。
 当前仅绑定 UART5 S.BUS，且只映射底盘；VTM、Keyboard、Vision 有提交接口，尚未绑定实际设备。
+默认保留旧通道映射；`H7_REMOTE_WFLY=ON` 时选用下文的 WFLY 底盘映射。
 
 ## 文件与职责
 
@@ -37,7 +38,7 @@ InputState 是一个静态结构体，没有锁或临界区；所有读写和选
 接收时戳应保留实际新帧到达时间，不要在每次 Update 时给旧帧重新盖时间戳。
 若替换 RemoteInput，仍需每周期调用 InputState_SetTime，避免仲裁时钟停在旧值。
 
-## 当前 S.BUS 映射
+## 默认 S.BUS 映射
 
 通道数组为零基索引，代码中的 index 0 对应遥控 CH1。
 
@@ -62,6 +63,29 @@ CH5 跟随模式、云台角度和发射按钮当前均未接入；提交的 Rem
 尚未解锁时 CH1～CH4 必须在 ±50 原始单位内，健康且回中持续 200 ms 后才提交有效命令。
 未回中或再次失联都会重新计时；已解锁后不再要求持续回中。
 CH10 不参与解锁回中检查，因为当前旧遥控上它是偏置开关。
+
+## 可选 WFLY 底盘映射
+
+`H7_REMOTE_WFLY` 是默认 OFF 的 CMake 选项，只影响已有 SingleBoard/GimbalBoard 输入链。
+启用步骤、接线、全部设备字段和协议依据见 [WFLY 接收机指南](../../Device/Peripheral/Remote/README.md#wfly-接入与协议依据)。
+初始化仍只调用一次 `SBUS_Init(&huart5)`，ControlTask 通过 `WFLY_ReadLatest()` 获取语义快照。
+
+| 控件 / 通道 | 底盘命令 |
+| --- | --- |
+| 左摇杆 Y / CH2 | `vx = left_remote_y × gear × 0.5 m/s`，原始通道增加时 vx 为负 |
+| 左摇杆 X / CH4 | `vy = -left_remote_x × gear × 0.5 m/s`，原始通道增加时 vy 为负 |
+| 上左旋钮 / CH9 | `gear = knob_up_left / 2`，范围 [0,1]，中点 0.5，只缩放平移 |
+| 下左旋钮 / CH15 | `wz = knob_down_left × 1 rad/s`，支持正负旋转，不随 gear 缩放 |
+
+轴统一以中点 1024、半量程 671 归一化并限幅到 [-1,1]；输入适配再在 (-0.04,0.04) 内置零。
+使用底盘坐标系，不按云台朝向旋转平移目标。任一速度非零时为 NO_FOLLOW，否则为 ZERO_FORCE。
+上左旋钮调到最低只关闭平移比例，不取消 CH15 的旋转命令。
+
+帧时效仍为 50 ms，frame-lost/failsafe 立即锁定，健康且回中 200 ms 后恢复。
+WFLY 的回中检查为 CH1～CH4 **及 CH15**，均须在原始中点 1024 ±50 范围内；其他旋钮与开关不参与解锁。
+接收时戳直接沿用 `state.sbus.timestamp_ms`，反复读取同一快照不延长许可。
+云台固定 DISABLED、发射固定 OFF，其他开关、右摇杆和旋钮只提供设备读取接口；
+不复制参考工程的菜单、键鼠/视觉切源、坐标变换或发射逻辑。
 
 ## InputState 接口
 
@@ -184,5 +208,6 @@ InputState_Reset 会清空全部来源，不应在某个来源临时失联时反
 
 验证应覆盖初始化失败、S.BUS 帧丢失/failsafe、50 ms 门限、200 ms 回中解锁、
 通道方向/死区/速度档、切源前旧包被拒、选中来源失效不回退、Vision 失效 LOCK，
-以及 Remote 失效时三个机构最终收到安全命令。
-纯文档修改核对内容和链接；输入行为变更还需构建 SingleBoard/GimbalBoard，并实测遥控失联与恢复。
+以及 Remote 失效时三个机构最终收到安全命令。`python3 tests/remote/run.py` 分别回归默认与 WFLY
+分支，包含 CH15 回中、WFLY 全通道语义与底盘方向/限幅，并测试实际 RobotCmd 输出和射击事件清理。
+纯文档修改核对内容和链接；输入行为变更构建当前选中的板型和配置，并实测遥控失联与恢复。

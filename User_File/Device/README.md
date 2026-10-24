@@ -23,7 +23,7 @@ Application 使用 Device 接口，不直接解析 CAN/UART 或管理 DMA。
 | 达妙电机 | [dmmotor.h](Peripheral/Motor/DMmotor/dmmotor.h) | Gimbal 拥有设备；StatusTask 维护 ServiceAll |
 | DJI 电机 | [dji_motor.h](Peripheral/Motor/DJImotor/dji_motor.h) | Chassis/Shoot 初始化电机与发送组；StatusTask 维护设备 ServiceAll |
 | 瓴控 LK 电机 | [lk_motor.h](Peripheral/Motor/LKmotor/lk_motor.h) | 单机/广播与本地 PID；StatusTask 维护安全服务，未绑定实际机构 |
-| S.BUS / DJI 遥控 | [sbus.h](Peripheral/Remote/sbus.h)、[remote_control.h](Peripheral/Remote/remote_control.h) | 当前 Input 绑定 UART5 S.BUS |
+| S.BUS / WFLY / DJI 遥控 | [sbus.h](Peripheral/Remote/sbus.h)、[wfly.h](Peripheral/Remote/wfly.h)、[remote_control.h](Peripheral/Remote/remote_control.h) | Input 绑定 UART5 S.BUS；WFLY 底盘映射默认关闭 |
 | 裁判 / VTM / UI | [Referee 指南](Peripheral/Referee/README.md) | 启用 H7_APP_CLIENT_UI 时 System_Init 绑定 Referee；控制业务尚未接入 Shoot/Chassis |
 | EricTool | [dvc_erictool.h](Peripheral/EricTool/dvc_erictool.h) | UART/USB 调试与遥测 |
 | BMI088 | [bsp_bmi088.h](Onboard/BMI088/bsp_bmi088.h) | System 初始化、BMI088_Task 解算，应用读取 INS Topic |
@@ -150,6 +150,7 @@ bool MotorExample_Update(bool allowed, float speed_rad_s)
 | SBUS_GetDiagnostics | 读取接收、重同步、合法帧和失控标志统计 |
 | SBUS_IsEnabled / Online / DataValid / Healthy | Enabled 为完成绑定，Online/DataValid 为守护在线，Healthy 还排除 frame_lost/failsafe |
 | SBUS_RxCallback | 交给 BSP 的流式 chunk 解析入口，业务不另注册竞争回调 |
+| WFLY_ReadLatest(&state) | 从同一 S.BUS 完整快照转换 WFLY 全通道语义；成功不表示新帧或健康，时戳/序号/标志在 state.sbus 中 |
 | RemoteControlInit | DJI 遥控协议的独立入口，返回静态 RC_ctrl_t 数据指针 |
 | RemoteControlIsOnline / Enabled / DataValid / Healthy | 对应 DJI 遥控链路状态；不等于已接入 RobotCmd 仲裁 |
 

@@ -174,6 +174,7 @@ option(H7_APP_GIMBAL "Build the Gimbal application" OFF)
 option(H7_APP_CHASSIS "Build the Chassis application" OFF)
 option(H7_APP_SHOOT "Build the Shoot application" OFF)
 option(H7_APP_CLIENT_UI "Build the referee HUD example" OFF)
+option(H7_REMOTE_WFLY "Use the WFLY channel mapping for UART5 S.BUS input" OFF)
 if(H7_BOARD STREQUAL "GimbalBoard")
     set(H7_APP_GIMBAL ON)
     set(H7_APP_CHASSIS OFF)
@@ -191,7 +192,8 @@ set(H7_GIMBAL_TASK_DEVICE_SOURCES
     User_File/Task/StorageTask.cpp
     User_File/Device/Peripheral/Motor/DMmotor/dmmotor.cpp
     User_File/Device/Peripheral/Remote/remote_control.c
-    User_File/Device/Peripheral/Remote/sbus.cpp)
+    User_File/Device/Peripheral/Remote/sbus.cpp
+    User_File/Device/Peripheral/Remote/wfly.cpp)
 set(H7_CHASSIS_DEVICE_SOURCES
     User_File/Device/Peripheral/Referee/referee_daemon.cpp
     User_File/Device/Peripheral/Referee/crc_ref.c
@@ -329,6 +331,7 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     CHASSIS=$<BOOL:${H7_APP_CHASSIS}>
     SHOOT=$<BOOL:${H7_APP_SHOOT}>
     H7_CLIENT_UI=$<BOOL:${H7_APP_CLIENT_UI}>
+    H7_REMOTE_WFLY=$<BOOL:${H7_REMOTE_WFLY}>
     H7_HAS_DM_MOTOR=$<NOT:$<STREQUAL:${H7_BOARD},ChassisBoard>>
 )
 
