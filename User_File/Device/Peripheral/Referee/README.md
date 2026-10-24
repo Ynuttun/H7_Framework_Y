@@ -5,7 +5,7 @@
 本目录提供裁判系统帧解析、UI 绘制与 VTM 解析代码。`H7_APP_CLIENT_UI` 默认关闭；
 启用时 `System_Init()` 按 `BoardHardware::referee_uart` 统一绑定 Referee，StatusTask
 非阻塞绘制 [ClientUI HUD 示例](../../../Application/ClientUI/README.md)。
-底盘功率、热量和发射互锁仍未接入，VTM 不随 UI 自动绑定。
+裁判缓冲能量、17 mm 热量/上限及弹量已接入 UI 显示；功率控制和发射互锁仍未接入，VTM 不随 UI 自动绑定。
 
 ## 协议解析与 UART 接入
 
@@ -36,9 +36,26 @@ VTM 的 `VTMIsEnabled/Online/DataValid/Healthy()` 与上述通信设备语义一
 失败保持输出不变。它不是整个 `referee_info_t` 的一致业务快照。
 `RefereeUIIsReady()` 仅表示已绑定且有 TX DMA，不等于裁判在线或客户端收到。
 
+## UI 裁判显示快照
+
+`RefereeReadUISnapshot(referee_ui_snapshot_t*)` 是 C 兼容读取接口，在短 PRIMASK 临界区
+复制显示数据及时间戳，并恢复原中断状态；返回成功只表示快照读取成功。
+未初始化或空指针返回 0 且不修改输出。三个 received 标志区分从未收到与有效零值：
+
+| 来源 | 字段 | 源时间 |
+| --- | --- | --- |
+| 0x0201，13 字节 | barrel_heat_limit | status_ms |
+| 0x0202，14 字节 | buffer_energy_j、barrel_heat（17 mm） | heat_ms |
+| 0x0208，8 字节 | projectile_allowance（17 mm） | allowance_ms |
+
+只有对应命令的长度和 CRC 均合法时才更新该组数值及时间。接口返回原始时间，
+不自动续期或将过期值置零；UI 分别按 HAL tick 无符号差 <500 ms 判断有效，支持 tick 回绕。
+初始化重置全部 received 标志。底层协议长度保持现有定义，不自动兼容老车其他版本。
+通用 Capture 将此快照复制到显示 Topic；热量或允许量不进入发射许可决策。
+
 ## Known Issues
 
-- `referee_info_t` 仍由中断更新，任务直接读取多个字段可能跨帧；消费前需增加业务快照。
+- `referee_info_t` 仍由中断更新，任务直接读取多个字段可能跨帧；UI 使用上述专用快照，其他业务消费前仍需增加相应快照。
 - 裁判业务数据尚未进入控制 Topic、Chassis 或 Shoot；ClientUI 有独立显示 Topic，无独立 UI 任务。
 - 旧 UI 发送接口仍有 115 ms 延时；新 HUD 仅走非阻塞接口，实际 UART/客户端行为仍须实机验证。
 

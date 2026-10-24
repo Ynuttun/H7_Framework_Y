@@ -118,6 +118,8 @@ S.BUS 使用 UART5：帧新鲜度 50 ms，frame-lost/failsafe 立即锁定；连
 CH1–CH4 回中后解锁。CH2/CH1 映射底盘前后/左右，CH7 为速度档，CH10 负半轴为手动旋转；
 CH5 跟随、CH3/CH4 云台与 CH6 发射暂未接入。旧步兵的 30/50 非 SI 参数不移植，
 目前调试上限为 0.5 m/s 和 1 rad/s，实车使用前须确认方向、机械零位与限幅。
+上述为默认映射；可选 `H7_REMOTE_WFLY=ON` 使用左摇杆平移、上左旋钮调平移比例、下左旋钮双向旋转，
+解锁额外要求 CH15 回中，云台和发射仍禁用。完整映射见 [Input 指南](Input/README.md#可选-wfly-底盘映射)。
 失联时清除未执行的发射事件，并立即发布 Gimbal `DISABLED`、Chassis `ZERO_FORCE`、Shoot `OFF`。
 失去输入许可和获许可时切换来源两处共用私有 `RobotCmd_DiscardShootEvents()`；
 清理仍发生在新来源目标装载之前，命令发布频率与来源仲裁顺序不变。

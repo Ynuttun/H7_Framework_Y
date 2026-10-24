@@ -116,6 +116,10 @@ CAN 接收回调在中断上下文执行。UART 的 DMA 接收须同时具备 Cu
 
 EricTool 的 USB/UART 解析均只读取回调传入的缓冲区及有效长度，通过字符串指针字典匹配变量名；非法帧返回索引 `-1`、值 `0`，不会沿用上一帧结果。当前保持首帧语义，第一个 `#` 后的字节忽略，不提供跨回调拼帧。UART 周期输出的返回值沿用 HAL 状态，应用需处理忙或失败。
 
+[WFLY 接收机](User_File/Device/Peripheral/Remote/README.md#wfly-接入与协议依据)复用 UART5 S.BUS 流式驱动，
+提供全部摇杆、开关、旋钮及原始状态快照；`H7_REMOTE_WFLY` 默认关闭，启用后选择 WFLY 底盘输入映射。
+统一中点 1024、半量程 671，保留 50 ms 时效和 200 ms 回中解锁，云台与发射保持禁用；接线极性和通道标定须实机核对。
+
 可选的 [ClientUI HUD 示例](User_File/Application/ClientUI/README.md) 由 `H7_APP_CLIENT_UI` 控制，
 默认关闭。启用后统一绑定 BoardConfig 的裁判 UART，以本板 Topic 提供显示数据，
 由 StatusTask 非阻塞刷新；身份默认从裁判获取，缺失数据显示未知，未增加 UI 板间协议。

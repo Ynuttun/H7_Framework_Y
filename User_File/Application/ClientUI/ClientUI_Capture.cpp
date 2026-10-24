@@ -1,5 +1,6 @@
 #include "ClientUI.h"
 #include "message_center.h"
+#include "referee_26.h"
 
 #include <cmath>
 #include <cstring>
@@ -79,6 +80,22 @@ void ClientUI_Capture(void)
                                                                         : Enum_Client_UI_Chassis::Active;
         }
     }
+    referee_ui_snapshot_t referee{};
+    if (RefereeReadUISnapshot(&referee))
+    {
+        next.referee_status_ms = referee.status_ms;
+        next.referee_heat_ms = referee.heat_ms;
+        next.referee_allowance_ms = referee.allowance_ms;
+        const uint32_t tick_ms = HAL_GetTick();
+        next.referee_status_valid = referee.status_received && tick_ms - referee.status_ms < ClientUIConfig::kRefereeMaxAgeMs;
+        next.referee_heat_valid = referee.heat_received && tick_ms - referee.heat_ms < ClientUIConfig::kRefereeMaxAgeMs;
+        next.referee_allowance_valid = referee.allowance_received && tick_ms - referee.allowance_ms < ClientUIConfig::kRefereeMaxAgeMs;
+        next.buffer_energy_j = referee.buffer_energy_j;
+        next.barrel_heat = referee.barrel_heat;
+        next.barrel_heat_limit = referee.barrel_heat_limit;
+        next.projectile_allowance = referee.projectile_allowance;
+    }
+    // 实测功率与持久发射模式由机器人在此适配；不消费 ShootEvent 推断模式。
     // 没有相对 Yaw、自瞄采用状态和具体机器人诊断，保留未知/空文字。
     MessageCenter::Client_UI_State_Topic.PublishAt(next, now_us);
 }
