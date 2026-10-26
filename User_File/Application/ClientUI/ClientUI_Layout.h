@@ -11,8 +11,8 @@ namespace ClientUILayout
 {
 constexpr float kRadToDeg = 57.2957795131f;
 constexpr float kRadSToRpm = 9.54929658551f;
-constexpr uint8_t kStaticGroups = 6U; // 5 包七图元 + 1 包双图元
-constexpr uint8_t kTextCount = 7U;
+constexpr uint8_t kStaticGroups = 7U; // 6 包七图元 + 1 包单图元
+constexpr uint8_t kTextCount = 9U;
 
 constexpr interaction_figure_t Figure(uint8_t id, uint32_t type, uint32_t color, uint32_t width,
                                       uint32_t x, uint32_t y, uint32_t c = 0U, uint32_t d = 0U, uint32_t e = 0U)
@@ -94,15 +94,33 @@ constexpr interaction_figure_t kStaticFigures[] = {
     Number(34U, 697U, 294U, 14U, 500),
     Line(35U, color_Green, 2U, 630U, 320U, 505U, 175U),
     Line(36U, color_Green, 2U, 1290U, 320U, 1460U, 125U),
+    Arc(37U, color_White, 1U, 960U, 540U, 510U, 296U, 308U),
+    Line(38U, color_White, 3U, 564U, 850U, 553U, 858U),
+    Line(39U, color_White, 3U, 533U, 807U, 522U, 814U),
+    Line(40U, color_White, 3U, 508U, 761U, 495U, 767U),
+    Figure(41U, figure_type_Ellipse, color_White, 2U, 529U, 764U, 0U, 5U, 3U),
+    Figure(42U, figure_type_Ellipse, color_White, 2U, 539U, 764U, 0U, 5U, 3U),
 };
 
-inline void BuildDynamic(const Struct_Client_UI_State& view, interaction_figure_t (&graphs)[7])
+inline interaction_figure_t FirePointer(Enum_Client_UI_FireMode mode)
+{
+    auto graph = Line(107U, color_Purplish_red, 6U, 564U, 850U, 553U, 858U);
+    if (mode == Enum_Client_UI_FireMode::Triple)
+        graph = Line(107U, color_Purplish_red, 6U, 533U, 807U, 522U, 814U);
+    else if (mode == Enum_Client_UI_FireMode::Burst)
+        graph = Line(107U, color_Purplish_red, 6U, 508U, 761U, 495U, 767U);
+    else if (mode != Enum_Client_UI_FireMode::Single)
+        graph.operate_type = operate_type_Del;
+    return graph;
+}
+
+inline void BuildDynamic(const Struct_Client_UI_State& view, interaction_figure_t (&graphs)[7], bool blink_on = true)
 {
     // 复用原电容填充图元；只接受实测功率，浮点协议编码为 W × 1000。
     const bool power_valid = view.power_valid && std::isfinite(view.power_w) &&
                              view.power_w >= 0.0f && view.power_w <= 3276.75f;
     const uint32_t power = power_valid ? static_cast<uint32_t>(std::lround(view.power_w * 1000.0f)) : 0U;
-    graphs[0] = Number(100U, 400U, 630U, 22U, power);
+    graphs[0] = Number(100U, 260U, 630U, 22U, power);
     graphs[0].figure_type = figure_type_Float;
     graphs[0].details_b = 1U;
     graphs[0].width = 2U;
@@ -124,14 +142,14 @@ inline void BuildDynamic(const Struct_Client_UI_State& view, interaction_figure_
     const uint32_t autoaim = static_cast<uint32_t>(view.autoaim);
     const uint32_t start = autoaim == 1U ? 185U : autoaim == 2U ? 175U
                                                                 : 165U;
-    graphs[2] = Arc(102U, autoaim == 1U ? color_Pink : autoaim == 2U ? color_Cyan
+    graphs[2] = Arc(102U, autoaim == 1U ? (view.target_detected ? (blink_on ? color_Main : color_White) : color_Pink) : autoaim == 2U ? color_Cyan
                                                                      : color_Green,
                     12U, 960U, 540U, 240U, start, start + 10U);
     if (autoaim == 0U)
         graphs[2].operate_type = operate_type_Del;
 
     // 相对 Yaw 取负适配客户端顺时针角度，显示底盘相对云台的朝向；颜色反映实际许可/ready。
-    const uint32_t ring_color = view.chassis == Enum_Client_UI_Chassis::Unknown || view.chassis == Enum_Client_UI_Chassis::Waiting ? color_Cyan : view.chassis == Enum_Client_UI_Chassis::Spin ? color_Green
+    const uint32_t ring_color = view.chassis == Enum_Client_UI_Chassis::Unknown || view.chassis == Enum_Client_UI_Chassis::Waiting ? color_Main : view.chassis == Enum_Client_UI_Chassis::Spin ? color_Green
                                                                                                                                                                                                : color_Pink;
     const bool yaw_valid = view.yaw_valid && std::isfinite(view.relative_yaw_rad);
     const float yaw = yaw_valid ? -std::remainder(view.relative_yaw_rad, 6.28318530718f) * kRadToDeg : 0.0f;
@@ -156,6 +174,18 @@ inline void BuildDynamic(const Struct_Client_UI_State& view, interaction_figure_
                        view.loader == Enum_Client_UI_Motion::Unknown ? color_White : view.loader == Enum_Client_UI_Motion::Moving ? color_Green
                                                                                                                                   : color_Pink,
                        4U, 1518U, 606U, 6U);
+    if (view.initializing)
+    {
+        graphs[1].operate_type = operate_type_ADD;
+        graphs[2] = Arc(102U, color_Main, 12U, 960U, 540U, 240U, 165U, 195U);
+        for (uint8_t i = 1U; i < 7U; ++i)
+            graphs[i].color = color_Main;
+        for (uint8_t i = 4U; i < 6U; ++i)
+        {
+            graphs[i].operate_type = operate_type_ADD;
+            graphs[i].start_y = graphs[i].details_e = 663U;
+        }
+    }
 }
 } // namespace ClientUILayout
 #endif

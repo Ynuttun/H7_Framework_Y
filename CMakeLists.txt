@@ -235,6 +235,8 @@ else()
 endif()
 
 if(H7_APP_CLIENT_UI)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+        H7_CLIENT_UI_LOCAL_INPUT=$<NOT:$<STREQUAL:${H7_BOARD},ChassisBoard>>)
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         User_File/Application/ClientUI/ClientUI.cpp
         User_File/Application/ClientUI/ClientUI_Capture.cpp)

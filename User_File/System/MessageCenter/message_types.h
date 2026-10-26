@@ -158,7 +158,7 @@ enum class Enum_Client_UI_FireMode : uint8_t
 
 /** ControlTask 唯一发布，StatusTask 消费；原始反馈时间戳不会随采集刷新。
  * 文字为至多 29 字节的 ASCII 加结尾 NUL；报警无需显示时置空。
- * yaw/autoaim/文字由具体机器人适配器提供，整体快照有效期 200 ms。
+ * yaw/诊断文字由具体机器人适配器提供，整体快照有效期 200 ms。
  */
 struct Struct_Client_UI_State
 {
@@ -176,6 +176,11 @@ struct Struct_Client_UI_State
     Enum_Client_UI_Motion friction = Enum_Client_UI_Motion::Unknown;
     Enum_Client_UI_Motion loader = Enum_Client_UI_Motion::Unknown;
     Enum_Client_UI_AutoAim autoaim = Enum_Client_UI_AutoAim::Unknown;
+    // 目标源时间使用 HAL tick ms；自瞄状态由本板输入仲裁生成。
+    uint32_t target_received_ms = 0U;
+    uint64_t autoaim_timestamp_us = 0U;
+    bool target_detected = false;
+    bool initializing = true;
     // 功率来自实测源；默认适配器不提供功率或持久发射模式。
     uint64_t power_timestamp_us = 0U;
     uint64_t fire_mode_timestamp_us = 0U;

@@ -26,8 +26,9 @@ uint32_t value_sent_ms[2];
 uint8_t auxiliary_slot;
 uint8_t last_referee_validity;
 uint8_t mode_remaining[2];
-char requested_mode[2][30];
-char sent_text[7][30];
+char requested_mode[30];
+Enum_Client_UI_FireMode requested_fire_mode;
+char sent_text[6][30];
 bool sent_warning[3];
 
 bool DrawStatic(uint16_t robot_id)
@@ -35,26 +36,26 @@ bool DrawStatic(uint16_t robot_id)
     using namespace ClientUILayout;
     if (rebuild_slot < kStaticGroups)
     {
-        const uint8_t count = rebuild_slot == kStaticGroups - 1U ? 2U : 7U;
+        const uint8_t count = rebuild_slot == kStaticGroups - 1U ? 1U : 7U;
         return RefereeUITryDraw(robot_id, kStaticFigures + rebuild_slot * 7U, count);
     }
     const uint8_t index = rebuild_slot - kStaticGroups;
-    const char* labels[kTextCount] = {"F", "E", "A   B   C", "CAP N/A", "kRPM", "LOAD", "POWER W"};
-    const uint16_t x[kTextCount] = {697U, 605U, 912U, 440U, 1670U, 1535U, 400U};
-    const uint16_t y[kTextCount] = {775U, 550U, 275U, 700U, 730U, 614U, 665U};
+    const char* labels[kTextCount] = {"F", "E", "A B C", "CAP N/A", "kRPM", "LOAD", "POWER W", "1", "3"};
+    const uint16_t x[kTextCount] = {697U, 605U, 910U, 300U, 1670U, 1535U, 260U, 579U, 548U};
+    const uint16_t y[kTextCount] = {775U, 550U, 275U, 700U, 730U, 614U, 665U, 862U, 818U};
     ext_client_custom_character_t text{};
     text.graphic_data_struct = Figure(150U + index, figure_type_Char, color_White, 1U, x[index], y[index]);
-    text.graphic_data_struct.details_a = index < 3U ? 20U : 14U;
+    text.graphic_data_struct.details_a = index < 3U ? 20U : index >= 7U ? 16U : 14U;
     const size_t length = std::strlen(labels[index]);
     text.graphic_data_struct.details_b = length;
     std::memcpy(text.data, labels[index], length);
     return RefereeUITryText(robot_id, &text);
 }
 
-bool DrawDynamic(uint16_t robot_id, const Struct_Client_UI_State& view)
+bool DrawDynamic(uint16_t robot_id, const Struct_Client_UI_State& view, uint32_t now_ms)
 {
     interaction_figure_t graphs[7]{};
-    ClientUILayout::BuildDynamic(view, graphs);
+    ClientUILayout::BuildDynamic(view, graphs, (now_ms / ClientUIConfig::kTargetBlinkPhaseMs) % 2U == 0U);
     uint8_t next_visible = 0U;
     for (uint8_t i = 0U; i < 7U; ++i)
     {
@@ -75,17 +76,17 @@ bool DrawDynamic(uint16_t robot_id, const Struct_Client_UI_State& view)
 bool DrawText(uint16_t robot_id, uint8_t index, const char* label, bool warning)
 {
     ext_client_custom_character_t text{};
-    const uint16_t x[] = {60U, 60U, 60U, 1510U, 40U, 40U, 40U};
-    const uint16_t y[] = {800U, 770U, 740U, 560U, 640U, 670U, 700U};
+    const uint16_t x[] = {0U, 0U, 0U, 1510U, 40U, 40U};
+    const uint16_t y[] = {820U, 790U, 760U, 560U, 640U, 670U};
     text.graphic_data_struct = ClientUILayout::Figure(170U + index, figure_type_Char,
                                                       index >= 3U ? color_White : warning ? color_Yellow : color_Orange,
-                                                      2U, x[index], y[index]);
+                                                      2U, index < 3U ? 960U - 9U * std::strlen(label) : x[index], y[index]);
     text.graphic_data_struct.details_a = 18U;
     text.graphic_data_struct.operate_type = *label == '\0' ? operate_type_Del
                                             : sent_text[index][0] == '\0' || (text_pending & (1U << index)) != 0U
                                                 ? operate_type_ADD : operate_type_Change;
-    if (*label != '\0' && (index == 3U || index == 6U))
-        text.graphic_data_struct.operate_type = (mode_remaining[index == 3U ? 0U : 1U] & 1U) == 0U
+    if (*label != '\0' && index == 3U)
+        text.graphic_data_struct.operate_type = (mode_remaining[0] & 1U) == 0U
                                                    ? operate_type_ADD : operate_type_Change;
     const size_t length = std::strlen(label);
     text.graphic_data_struct.details_b = length;
@@ -134,6 +135,7 @@ void ClientUI_Update(void)
         std::memset(sent_text, 0, sizeof(sent_text));
         std::memset(sent_warning, 0, sizeof(sent_warning));
         std::memset(requested_mode, 0, sizeof(requested_mode));
+        requested_fire_mode = Enum_Client_UI_FireMode::Unknown;
         std::memset(mode_remaining, 0, sizeof(mode_remaining));
         std::memset(value_sent_ms, 0, sizeof(value_sent_ms));
         auxiliary_slot = last_referee_validity = 0U;
@@ -165,6 +167,15 @@ void ClientUI_Update(void)
         view.chassis = Enum_Client_UI_Chassis::Unknown;
         std::strcpy(view.mode_text, "UNKNOWN");
     }
+#if GIMBAL
+    view.initializing |= !view.pitch_valid;
+#endif
+#if CHASSIS
+    view.initializing |= view.chassis == Enum_Client_UI_Chassis::Unknown || view.chassis == Enum_Client_UI_Chassis::Waiting;
+#endif
+#if SHOOT
+    view.initializing |= Expired(view.shoot_timestamp_us, now_us);
+#endif
     view.mode_text[29] = '\0';
     for (auto& line : view.alert_text)
         line[29] = '\0';
@@ -174,13 +185,18 @@ void ClientUI_Update(void)
     if (now_us < view.fire_mode_timestamp_us || now_us - view.fire_mode_timestamp_us > ClientUIConfig::kFireModeMaxAgeUs)
         view.fire_mode = Enum_Client_UI_FireMode::Unknown;
     const uint32_t tick_ms = HAL_GetTick();
+    view.target_detected &= tick_ms - view.target_received_ms <= ClientUIConfig::kTargetMaxAgeMs;
+    if (Expired(view.autoaim_timestamp_us, now_us))
+        view.autoaim = Enum_Client_UI_AutoAim::Unknown;
+    else if (view.autoaim == Enum_Client_UI_AutoAim::Active && !view.target_detected)
+        view.autoaim = Enum_Client_UI_AutoAim::Waiting;
     view.referee_status_valid &= tick_ms - view.referee_status_ms < ClientUIConfig::kRefereeMaxAgeMs;
     view.referee_heat_valid &= tick_ms - view.referee_heat_ms < ClientUIConfig::kRefereeMaxAgeMs;
     view.referee_allowance_valid &= tick_ms - view.referee_allowance_ms < ClientUIConfig::kRefereeMaxAgeMs;
     const uint8_t referee_validity = (view.referee_status_valid ? 1U : 0U) |
                                      (view.referee_heat_valid ? 2U : 0U) |
                                      (view.referee_allowance_valid ? 4U : 0U);
-    char labels[7][30]{};
+    char labels[6][30]{};
     for (uint8_t i = 0U; i < 3U; ++i)
         std::memcpy(labels[i], view.alert_text[i], sizeof(labels[i]));
     std::memcpy(labels[3], view.mode_text, sizeof(labels[3]));
@@ -197,20 +213,18 @@ void ClientUI_Update(void)
         const size_t length = std::strlen(labels[5]);
         std::snprintf(labels[5] + length, sizeof(labels[5]) - length, "%sAMMO %u", length ? " " : "", unsigned(view.projectile_allowance));
     }
-    const char* fire = view.fire_mode == Enum_Client_UI_FireMode::Single ? "FIRE SINGLE"
-                      : view.fire_mode == Enum_Client_UI_FireMode::Triple ? "FIRE TRIPLE"
-                      : view.fire_mode == Enum_Client_UI_FireMode::Burst ? "FIRE BURST" : "";
-    std::strcpy(labels[6], fire);
-    // 每轮观察目标，即使新模式先变回已发送内容，也取消旧目标的剩余补发。
-    for (uint8_t i = 0U; i < 2U; ++i)
+    // 每轮观察最新目标；中途变化取消旧目标的剩余补发。
+    if (std::strcmp(labels[3], requested_mode) != 0 || (text_pending & (1U << 3U)) != 0U)
     {
-        const uint8_t index = i == 0U ? 3U : 6U;
-        if (std::strcmp(labels[index], requested_mode[i]) != 0 || (text_pending & (1U << index)) != 0U)
-        {
-            std::memcpy(requested_mode[i], labels[index], sizeof(requested_mode[i]));
-            mode_remaining[i] = 4U;
-            text_pending &= ~(1U << index);
-        }
+        std::memcpy(requested_mode, labels[3], sizeof(requested_mode));
+        mode_remaining[0] = 4U;
+        text_pending &= ~(1U << 3U);
+    }
+    if (view.fire_mode != requested_fire_mode || (text_pending & (1U << 6U)) != 0U)
+    {
+        requested_fire_mode = view.fire_mode;
+        mode_remaining[1] = 4U;
+        text_pending &= ~(1U << 6U);
     }
     bool submitted = false;
     bool auxiliary = false;
@@ -244,13 +258,24 @@ void ClientUI_Update(void)
                 if (submitted && ++rebuild_slot == ClientUILayout::kStaticGroups + ClientUILayout::kTextCount)
                     rebuilding = false;
             }
+            else if (slot == 3U)
+            {
+                if (mode_remaining[1] == 0U)
+                    continue;
+                auto graph = ClientUILayout::FirePointer(view.fire_mode);
+                if (graph.operate_type != operate_type_Del)
+                    graph.operate_type = (mode_remaining[1] & 1U) == 0U ? operate_type_ADD : operate_type_Change;
+                auxiliary = true;
+                submitted = RefereeUITryDraw(robot_id, &graph, 1U);
+                if (submitted)
+                    --mode_remaining[1];
+            }
             else
             {
                 const uint8_t index = 3U + slot;
-                const bool mode = slot == 0U || slot == 3U;
-                const uint8_t mode_index = slot == 0U ? 0U : 1U;
+                const bool mode = slot == 0U;
                 const bool pending = (text_pending & (1U << index)) != 0U;
-                if (mode ? mode_remaining[mode_index] == 0U : !pending && std::strcmp(labels[index], sent_text[index]) == 0)
+                if (mode ? mode_remaining[0] == 0U : !pending && std::strcmp(labels[index], sent_text[index]) == 0)
                     continue;
                 // 部分热量字段失效/恢复也绕过限频，不显示过期字段。
                 const bool validity_changed = slot == 2U && referee_validity != last_referee_validity;
@@ -264,7 +289,7 @@ void ClientUI_Update(void)
                     std::memcpy(sent_text[index], labels[index], sizeof(sent_text[index]));
                     text_pending &= ~(1U << index);
                     if (mode)
-                        --mode_remaining[mode_index];
+                        --mode_remaining[0];
                     else
                         value_sent_ms[slot - 1U] = now_ms;
                     if (slot == 2U)
@@ -278,7 +303,7 @@ void ClientUI_Update(void)
     if (!auxiliary)
     {
         const bool readding = readd_dynamic;
-        submitted = DrawDynamic(robot_id, view);
+        submitted = DrawDynamic(robot_id, view, now_ms);
         if (submitted && readding)
             dynamic_readd_ms = now_ms;
     }

@@ -1,6 +1,10 @@
 #include "ClientUI.h"
 #include "message_center.h"
 #include "referee_26.h"
+#if H7_CLIENT_UI_LOCAL_INPUT
+#include "input_state.h"
+#include "source_arbitration.h"
+#endif
 
 #include <cmath>
 #include <cstring>
@@ -80,6 +84,41 @@ void ClientUI_Capture(void)
                                                                         : Enum_Client_UI_Chassis::Active;
         }
     }
+
+#if H7_CLIENT_UI_LOCAL_INPUT
+    // 只读本 ControlTask 的输入快照；不改变仲裁结果或控制输出。
+    auto input = InputState_Read();
+    input.now_ms = HAL_GetTick();
+    next.target_received_ms = input.vision.received_ms;
+    next.target_detected = input.vision.valid &&
+                           input.now_ms - input.vision.received_ms <= ClientUIConfig::kTargetMaxAgeMs &&
+                           std::isfinite(input.vision.yaw_angle_rad) && std::isfinite(input.vision.pitch_angle_rad);
+    // 无本地输入来源（例如底盘板）时保持未知，不伪造关闭状态。
+    if (input.remote.valid || input.vision.valid)
+    {
+        const auto decision = SourceArbitration_Resolve(input);
+        next.autoaim_timestamp_us = now_us;
+        next.autoaim = !input.vision_enabled ? Enum_Client_UI_AutoAim::Off
+                      : decision.armed && next.target_detected &&
+                            input.vision.received_ms - input.selected_at_ms < 0x80000000U &&
+                            decision.gimbal.mode == GimbalMode::IMU ? Enum_Client_UI_AutoAim::Active
+                                                                   : Enum_Client_UI_AutoAim::Waiting;
+    }
+#endif
+    next.initializing = false;
+#if GIMBAL
+    const auto gimbal_command = MessageCenter::Gimbal_Command_Topic.ReadWithMeta();
+    next.initializing |= !next.pitch_valid ||
+                         (gimbal_command.valid && gimbal_command.data.mode != GimbalMode::DISABLED && !gimbal.data.enabled);
+#endif
+#if CHASSIS
+    next.initializing |= next.chassis == Enum_Client_UI_Chassis::Unknown || next.chassis == Enum_Client_UI_Chassis::Waiting;
+#endif
+#if SHOOT
+    const auto shoot_command = MessageCenter::Shoot_Command_Topic.ReadWithMeta();
+    next.initializing |= !Fresh(shoot, now_us) || !shoot.data.online ||
+                         (shoot_command.valid && shoot_command.data.shoot_mode == ShootMode::ON && !shoot.data.enabled);
+#endif
     referee_ui_snapshot_t referee{};
     if (RefereeReadUISnapshot(&referee))
     {
@@ -96,6 +135,6 @@ void ClientUI_Capture(void)
         next.projectile_allowance = referee.projectile_allowance;
     }
     // 实测功率与持久发射模式由机器人在此适配；不消费 ShootEvent 推断模式。
-    // 没有相对 Yaw、自瞄采用状态和具体机器人诊断，保留未知/空文字。
+    // 没有相对 Yaw 和具体机器人诊断，保留未知/空文字。
     MessageCenter::Client_UI_State_Topic.PublishAt(next, now_us);
 }
